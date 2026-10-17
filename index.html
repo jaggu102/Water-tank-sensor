@@ -1,0 +1,298 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Water Controller PWA</title>
+  <link rel="manifest" href="data:application/manifest+json,{
+    &quot;name&quot;: &quot;Water Controller&quot;,
+    &quot;short_name&quot;: &quot;WaterApp&quot;,
+    &quot;start_url&quot;: &quot;.&quot;,
+    &quot;display&quot;: &quot;standalone&quot;,
+    &quot;background_color&quot;: &quot;#0f172a&quot;,
+    &quot;theme_color&quot;: &quot;#0ea5e9&quot;,
+    &quot;icons&quot;: [{&quot;src&quot;: &quot;https://cdn-icons-png.flaticon.com/512/3105/3105807.png&quot;, &quot;sizes&quot;: &quot;512x512&quot;, &quot;type&quot;: &quot;image/png&quot;}]
+  }">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background-color: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .card { background-color: #1e293b; border: 1px solid #334155; }
+    .badge-active { background-color: #065f46; color: #34d399; }
+    .badge-inactive { background-color: #334155; color: #94a3b8; }
+    .badge-fault { background-color: #7f1d1d; color: #fca5a5; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+  </style>
+</head>
+<body class="p-4 max-w-md mx-auto min-h-screen pb-12">
+
+
+  <!-- Header -->
+  <header class="flex justify-between items-center mb-6 pt-2">
+    <div>
+      <h1 class="text-xl font-bold text-sky-400">Dual-Tank Controller</h1>
+      <p id="connection_status" class="text-xs text-slate-400">Connecting to ESP32...</p>
+    </div>
+    <button onclick="toggleSettings()" class="p-2 bg-slate-800 rounded-xl border border-slate-700 text-slate-300">
+      ⚙️
+    </button>
+  </header>
+
+
+  <!-- Settings Modal (Hidden by default) -->
+  <div id="settings_modal" class="card p-4 rounded-2xl mb-6 hidden">
+    <h2 class="text-sm font-semibold mb-2 text-sky-300">ESP32 VPN IP Address</h2>
+    <div class="flex gap-2">
+      <input type="text" id="esp_ip_input" placeholder="e.g. 192.168.1.150" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500">
+      <button onclick="saveIp()" class="bg-sky-600 hover:bg-sky-500 text-white px-4 py-2 rounded-xl text-sm font-semibold">Save</button>
+    </div>
+  </div>
+
+
+  <!-- Fault Alert Banner (Hidden if no fault) -->
+  <div id="fault_banner" class="badge-fault p-4 rounded-2xl mb-6 hidden">
+    <div class="flex items-center gap-2 font-bold mb-1">
+      <span>⚠️</span> <span>SYSTEM FAULT DETECTED</span>
+    </div>
+    <p id="fault_text" class="text-xs text-red-200 font-mono"></p>
+  </div>
+
+
+  <!-- System Status Card -->
+  <div class="card p-5 rounded-2xl mb-4 shadow-lg">
+    <div class="flex justify-between items-center mb-4">
+      <span class="text-sm text-slate-400">Current State</span>
+      <span id="sys_state" class="px-3 py-1 rounded-full text-xs font-bold badge-inactive">LOADING</span>
+    </div>
+    <div class="flex justify-between items-center mb-2">
+      <span class="text-sm text-slate-400">Mode</span>
+      <span id="sys_mode" class="text-xs font-semibold text-slate-200">--</span>
+    </div>
+    <div class="flex justify-between items-center">
+      <span class="text-sm text-slate-400">Wi-Fi Signal</span>
+      <span id="wifi_rssi" class="text-xs font-mono text-slate-300">-- dBm</span>
+    </div>
+  </div>
+
+
+  <!-- Relays / Pumps Control Card -->
+  <div class="card p-5 rounded-2xl mb-4 shadow-lg">
+    <h2 class="text-sm font-semibold text-slate-300 mb-3">Pump Manual Controls</h2>
+    <div class="grid grid-cols-2 gap-3 mb-3">
+      <button onclick="togglePump(1)" id="btn_p1" class="p-3 rounded-xl font-bold text-xs border border-slate-700 bg-slate-800 text-slate-300">
+        Well Pump (1)<br><span id="p1_txt" class="text-[10px] font-normal text-slate-400">OFF</span>
+      </button>
+      <button onclick="togglePump(2)" id="btn_p2" class="p-3 rounded-xl font-bold text-xs border border-slate-700 bg-slate-800 text-slate-300">
+        Filter Pump (2)<br><span id="p2_txt" class="text-[10px] font-normal text-slate-400">OFF</span>
+      </button>
+    </div>
+    <button onclick="sendPost('/api/auto')" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl text-xs font-bold text-sky-400">
+      Resume Automatic Mode
+    </button>
+  </div>
+
+
+  <!-- Sensors Telemetry Card -->
+  <div class="card p-5 rounded-2xl mb-4 shadow-lg">
+    <h2 class="text-sm font-semibold text-slate-300 mb-3">Tank Sensors</h2>
+    <div class="grid grid-cols-2 gap-2 text-xs">
+      <div class="bg-slate-900 p-3 rounded-xl border border-slate-800 flex justify-between items-center">
+        <span class="text-slate-400">Settle Low</span>
+        <span id="s_low" class="px-2 py-0.5 rounded text-[10px] font-bold badge-inactive">--</span>
+      </div>
+      <div class="bg-slate-900 p-3 rounded-xl border border-slate-800 flex justify-between items-center">
+        <span class="text-slate-400">Settle High</span>
+        <span id="s_high" class="px-2 py-0.5 rounded text-[10px] font-bold badge-inactive">--</span>
+      </div>
+      <div class="bg-slate-900 p-3 rounded-xl border border-slate-800 flex justify-between items-center">
+        <span class="text-slate-400">Main Mid</span>
+        <span id="m_mid" class="px-2 py-0.5 rounded text-[10px] font-bold badge-inactive">--</span>
+      </div>
+      <div class="bg-slate-900 p-3 rounded-xl border border-slate-800 flex justify-between items-center">
+        <span class="text-slate-400">Main High</span>
+        <span id="m_high" class="px-2 py-0.5 rounded text-[10px] font-bold badge-inactive">--</span>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Settling Timer Card -->
+  <div class="card p-5 rounded-2xl mb-4 shadow-lg">
+    <h2 class="text-sm font-semibold text-slate-300 mb-2">Settling Delay Configuration</h2>
+    <p id="countdown_text" class="text-xs text-sky-400 font-mono mb-3">Lockout Countdown: 0m remaining</p>
+    <div class="flex gap-2">
+      <input type="number" id="delay_mins_input" placeholder="Mins (e.g. 360)" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500">
+      <button onclick="setDelay()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold">Update</button>
+    </div>
+  </div>
+
+
+  <!-- Event Log Card -->
+  <div class="card p-5 rounded-2xl mb-4 shadow-lg">
+    <h2 class="text-sm font-semibold text-slate-300 mb-2">Recent Event Log</h2>
+    <div id="event_log_box" class="bg-slate-900 p-3 rounded-xl border border-slate-800 font-mono text-[11px] text-slate-300 space-y-1 max-h-32 overflow-y-auto">
+      <div>Waiting for data...</div>
+    </div>
+  </div>
+
+
+  <!-- System Safety Card -->
+  <div class="card p-5 rounded-2xl shadow-lg">
+    <h2 class="text-sm font-semibold text-red-400 mb-3">Emergency & Maintenance</h2>
+    <div class="grid grid-cols-2 gap-2">
+      <button onclick="sendPost('/api/reset?reboot=0')" class="py-2.5 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-600/50 rounded-xl text-xs font-bold text-amber-300">
+        Clear Locks/Faults
+      </button>
+      <button onclick="if(confirm('Reboot ESP32 now?')) sendPost('/api/reset?reboot=1')" class="py-2.5 bg-red-600/20 hover:bg-red-600/30 border border-red-600/50 rounded-xl text-xs font-bold text-red-300">
+        Reboot ESP32
+      </button>
+    </div>
+  </div>
+
+
+  <script>
+    let espIp = localStorage.getItem('esp_ip') || '';
+    let p1State = false;
+    let p2State = false;
+
+
+    if (!espIp) {
+      document.getElementById('settings_modal').classList.remove('hidden');
+    }
+
+
+    function toggleSettings() {
+      let m = document.getElementById('settings_modal');
+      m.classList.toggle('hidden');
+      if(!m.classList.contains('hidden') && espIp) {
+        document.getElementById('esp_ip_input').value = espIp;
+      }
+    }
+
+
+    function saveIp() {
+      let val = document.getElementById('esp_ip_input').value.trim();
+      if(val) {
+        espIp = val.replace(/^https?:\/\//, '').replace(/\/$/, '');
+        localStorage.setItem('esp_ip', espIp);
+        document.getElementById('settings_modal').classList.add('hidden');
+        fetchStatus();
+      }
+    }
+
+
+    function fetchStatus() {
+      if (!espIp) {
+        document.getElementById('connection_status').innerText = "Configure ESP32 IP in ⚙️ settings";
+        return;
+      }
+
+
+      fetch(`http://${espIp}/api/status`, {signal: AbortSignal.timeout(3000)})
+        .then(res => res.json())
+        .then(data => {
+          document.getElementById('connection_status').innerText = `Connected (${espIp})`;
+          document.getElementById('sys_state').innerText = data.state;
+          document.getElementById('sys_state').className = "px-3 py-1 rounded-full text-xs font-bold " + (data.state === 'IDLE' ? 'badge-inactive' : 'badge-active');
+          document.getElementById('sys_mode').innerText = data.manual_mode ? "MANUAL OVERRIDE" : "AUTOMATIC";
+          document.getElementById('wifi_rssi').innerText = data.rssi + " dBm";
+
+
+          // Fault handling
+          let faultBanner = document.getElementById('fault_banner');
+          if (data.fault && data.fault !== "NONE") {
+            faultBanner.classList.remove('hidden');
+            document.getElementById('fault_text').innerText = data.fault;
+          } else {
+            faultBanner.classList.add('hidden');
+          }
+
+
+          // Pumps
+          p1State = data.pump1;
+          p2State = data.pump2;
+          
+          let btn1 = document.getElementById('btn_p1');
+          let txt1 = document.getElementById('p1_txt');
+          btn1.className = "p-3 rounded-xl font-bold text-xs border " + (p1State ? "bg-emerald-600/30 border-emerald-500 text-emerald-300" : "bg-slate-800 border-slate-700 text-slate-300");
+          txt1.innerText = p1State ? "RUNNING" : "OFF";
+
+
+          let btn2 = document.getElementById('btn_p2');
+          let txt2 = document.getElementById('p2_txt');
+          btn2.className = "p-3 rounded-xl font-bold text-xs border " + (p2State ? "bg-emerald-600/30 border-emerald-500 text-emerald-300" : "bg-slate-800 border-slate-700 text-slate-300");
+          txt2.innerText = p2State ? "RUNNING" : "OFF";
+
+
+          // Sensors
+          updateSensorBadge('s_low', data.sensors.settle_low_wet, 'WET', 'DRY');
+          updateSensorBadge('s_high', data.sensors.settle_high_wet, 'WET', 'DRY');
+          updateSensorBadge('m_mid', data.sensors.main_mid_demand, 'DEMAND', 'SATISFIED');
+          updateSensorBadge('m_high', data.sensors.main_high_full, 'FULL', 'OK');
+
+
+          // Countdown timer
+          if (data.settling_remaining_secs > 0) {
+            let mins = Math.floor(data.settling_remaining_secs / 60);
+            let secs = data.settling_remaining_secs % 60;
+            document.getElementById('countdown_text').innerText = `Lockout Countdown: ${mins}m ${secs}s remaining`;
+          } else {
+            document.getElementById('countdown_text').innerText = `Settling Lockout: Inactive / Complete`;
+          }
+
+
+          // Events
+          if (data.events && data.events.length > 0) {
+            let box = document.getElementById('event_log_box');
+            box.innerHTML = '';
+            data.events.forEach(e => {
+              if (e) box.innerHTML += `<div>${e}</div>`;
+            });
+          }
+        })
+        .catch(err => {
+          document.getElementById('connection_status').innerText = "Connection lost (Check VPN/IP)";
+        });
+    }
+
+
+    function updateSensorBadge(elemId, isWet, textWet, textDry) {
+      let el = document.getElementById(elemId);
+      el.innerText = isWet ? textWet : textDry;
+      el.className = "px-2 py-0.5 rounded text-[10px] font-bold " + (isWet ? "badge-active" : "badge-inactive");
+    }
+
+
+    function togglePump(num) {
+      if (!espIp) return alert('Please set ESP32 IP first.');
+      let targetState = (num === 1 ? !p1State : !p2State) ? 1 : 0;
+      fetch(`http://${espIp}/api/pump${num}?state=${targetState}`, {method: 'POST'})
+        .then(() => setTimeout(fetchStatus, 300));
+    }
+
+
+    function setDelay() {
+      if (!espIp) return alert('Please set ESP32 IP first.');
+      let mins = document.getElementById('delay_mins_input').value;
+      if (mins > 0) {
+        fetch(`http://${espIp}/api/set_delay?mins=${mins}`, {method: 'POST'})
+          .then(() => {
+            alert('Delay updated successfully');
+            fetchStatus();
+          });
+      }
+    }
+
+
+    function sendPost(endpoint) {
+      if (!espIp) return alert('Please set ESP32 IP first.');
+      fetch(`http://${espIp}${endpoint}`, {method: 'POST'})
+        .then(() => setTimeout(fetchStatus, 400));
+    }
+
+
+    // Poll status every 2 seconds
+    setInterval(fetchStatus, 2000);
+    window.onload = fetchStatus;
+  </script>
+</body>
+</html>
