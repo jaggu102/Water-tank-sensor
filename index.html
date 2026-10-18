@@ -150,6 +150,26 @@
 
 
   <script>
+window.addEventListener('DOMContentLoaded', () => {
+  // Read the query parameters from the browser URL
+    const urlParams = new URLSearchParams(window.location.search);
+      
+        // Look for a parameter named 'ip'
+          const ipParam = urlParams.get('ip');
+          
+            if (ipParam) {
+                const ipInput = document.getElementById('ipAddress');
+                    if (ipInput) {
+                          ipInput.value = ipParam;
+                          
+                                // Optional: If your app has a "Connect" or "Fetch" button, 
+                                      // you can trigger it automatically on load:
+                                            // document.getElementById('connectBtn')?.click();
+                                                }
+                                                  }
+                                                  });
+                                                  
+
     let espIp = localStorage.getItem('esp_ip') || '';
     let p1State = false;
     let p2State = false;
