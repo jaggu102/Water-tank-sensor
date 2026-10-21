@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"> 
+      
   <title>Water Controller PWA</title>
   <link rel="manifest" href="data:application/manifest+json,{
     &quot;name&quot;: &quot;Water Controller&quot;,
@@ -22,6 +23,11 @@
     .badge-fault { background-color: #7f1d1d; color: #fca5a5; animation: pulse 2s infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
   </style>
+   <!-- PWA Manifest & Theme -->
+    <link rel="manifest" href="manifest.json">
+      <meta name="theme-color" content="#0288d1">
+        <link rel="apple-touch-icon" href="icon-192.png">
+        -->
 </head>
 <body class="p-4 max-w-md mx-auto min-h-screen pb-12">
 
@@ -150,6 +156,15 @@
 
 
   <script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js')
+                  .then((reg) => console.log('Service Worker registered:', reg.scope))
+                        .catch((err) => console.error('Service Worker registration failed:', err));
+                          });
+                          }
+                          
+    }
 window.addEventListener('DOMContentLoaded', () => {
   // Read the query parameters from the browser URL
     const urlParams = new URLSearchParams(window.location.search);
