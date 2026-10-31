@@ -21,6 +21,7 @@
     .card { background-color: #1e293b; border: 1px solid #334155; }
     .badge-active { background-color: #065f46; color: #34d399; }
     .badge-inactive { background-color: #334155; color: #94a3b8; }
+    .badge-warn { background-color: #78350f; color: #fcd34d; }
     .badge-fault { background-color: #7f1d1d; color: #fca5a5; animation: pulse 2s infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
   </style>
@@ -52,8 +53,15 @@
         <button onclick="saveIp()" class="bg-sky-600 hover:bg-sky-500 text-white px-4 py-2 rounded-xl text-sm font-semibold">Save</button>
       </div>
     </div>
-    <!-- Hidden until /api/sync_time is implemented in ESP32 firmware -->
-    <div class="pt-2 border-t border-slate-700 hidden">
+    <div class="pt-3 border-t border-slate-700">
+      <h2 class="text-sm font-semibold mb-1 text-sky-300">Settling Delay Configuration</h2>
+      <p id="countdown_text" class="text-xs text-sky-400 font-mono mb-2">Lockout Countdown: 0m remaining</p>
+      <div class="flex gap-2">
+        <input type="number" id="delay_mins_input" placeholder="Mins (e.g. 360)" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500">
+        <button onclick="setDelay()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold">Update</button>
+      </div>
+    </div>
+    <div class="pt-2 border-t border-slate-700">
       <button onclick="syncClock()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl text-xs font-semibold text-emerald-400">
         🕒 Sync ESP32 RTC Clock with Phone
       </button>
@@ -70,13 +78,17 @@
 
   <!-- System Status Card -->
   <div class="card p-5 rounded-2xl mb-4 shadow-lg">
-    <div class="flex justify-between items-center mb-4">
+    <div class="flex justify-between items-center mb-3">
       <span class="text-sm text-slate-400">Current State</span>
       <span id="sys_state" class="px-3 py-1 rounded-full text-xs font-bold badge-inactive">LOADING</span>
     </div>
     <div class="flex justify-between items-center mb-2">
-      <span class="text-sm text-slate-400">Mode</span>
+      <span class="text-sm text-slate-400">Control Mode</span>
       <span id="sys_mode" class="text-xs font-semibold text-slate-200">--</span>
+    </div>
+    <div class="flex justify-between items-center mb-2">
+      <span class="text-sm text-slate-400">Backwash Power Safeguard</span>
+      <span id="bw_status_badge" class="px-2 py-0.5 rounded text-[10px] font-bold badge-inactive">--</span>
     </div>
     <div class="flex justify-between items-center">
       <span class="text-sm text-slate-400">Wi-Fi Signal</span>
@@ -84,7 +96,7 @@
     </div>
   </div>
 
-  <!-- Last Refill Time & Duration Card (Prominent Display) -->
+  <!-- Last Refill Time & Duration Card -->
   <div class="card p-5 rounded-2xl mb-4 shadow-lg border-sky-900/60">
     <div class="flex justify-between items-center mb-3">
       <h2 class="text-sm font-semibold text-sky-400">⏱️ Last Refill Time (Both Tanks)</h2>
@@ -93,7 +105,7 @@
       <!-- Settlement Tank Refill Info -->
       <div class="bg-slate-900 p-3.5 rounded-xl border border-slate-800">
         <div class="flex justify-between items-center mb-1">
-          <span class="text-slate-300 font-semibold">Settlement Tank (Pump 1)</span>
+          <span class="text-slate-300 font-semibold">Settlement Tank (Well Pump)</span>
           <span id="last_settle_ago" class="text-[11px] text-sky-400 font-medium">--</span>
         </div>
         <div class="flex justify-between items-center mt-2 pt-2 border-t border-slate-800/80">
@@ -111,7 +123,7 @@
       <!-- Main Tank Refill Info -->
       <div class="bg-slate-900 p-3.5 rounded-xl border border-slate-800">
         <div class="flex justify-between items-center mb-1">
-          <span class="text-slate-300 font-semibold">Main Tank (Pump 2)</span>
+          <span class="text-slate-300 font-semibold">Main Tank (Filter Pump)</span>
           <span id="last_main_ago" class="text-[11px] text-emerald-400 font-medium">--</span>
         </div>
         <div class="flex justify-between items-center mt-2 pt-2 border-t border-slate-800/80">
@@ -128,17 +140,23 @@
     </div>
   </div>
 
-  <!-- Relays / Pumps Control Card -->
+  <!-- Relays / Pumps Manual Controls Card -->
   <div class="card p-5 rounded-2xl mb-4 shadow-lg">
-    <h2 class="text-sm font-semibold text-slate-300 mb-3">Pump Manual Controls</h2>
+    <h2 class="text-sm font-semibold text-slate-300 mb-3">Pump & Safeguard Controls</h2>
     <div class="grid grid-cols-2 gap-3 mb-3">
-      <button onclick="togglePump(1)" id="btn_p1" class="p-3 rounded-xl font-bold text-xs border border-slate-700 bg-slate-800 text-slate-300">
-        Well Pump (1)<br><span id="p1_txt" class="text-[10px] font-normal text-slate-400">OFF</span>
+      <button onclick="toggleWellPump()" id="btn_well" class="p-3 rounded-xl font-bold text-xs border border-slate-700 bg-slate-800 text-slate-300">
+        Well Pump<br><span class="text-[10px] font-normal text-slate-400 block">(Fills Settlement)</span>
+        <span id="well_txt" class="text-[11px] font-mono mt-1 inline-block text-slate-400">OFF</span>
       </button>
-      <button onclick="togglePump(2)" id="btn_p2" class="p-3 rounded-xl font-bold text-xs border border-slate-700 bg-slate-800 text-slate-300">
-        Filter Pump (2)<br><span id="p2_txt" class="text-[10px] font-normal text-slate-400">OFF</span>
+      <button onclick="toggleFilterPump()" id="btn_filter" class="p-3 rounded-xl font-bold text-xs border border-slate-700 bg-slate-800 text-slate-300">
+        Filter Pump<br><span class="text-[10px] font-normal text-slate-400 block">(Fills Main Tank)</span>
+        <span id="filter_txt" class="text-[11px] font-mono mt-1 inline-block text-slate-400">OFF</span>
       </button>
     </div>
+    <button onclick="toggleBackwashPower()" id="btn_bw" class="w-full p-2.5 mb-3 rounded-xl font-bold text-xs border border-slate-700 bg-slate-800 text-slate-300 flex justify-between items-center px-4">
+      <span>Backwash Power Relay</span>
+      <span id="bw_btn_txt" class="text-[11px] font-mono text-emerald-400">ENABLED</span>
+    </button>
     <button onclick="sendPost('/api/auto')" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl text-xs font-bold text-sky-400">
       Resume Automatic Mode
     </button>
@@ -146,16 +164,25 @@
 
   <!-- Sensors Telemetry Card -->
   <div class="card p-5 rounded-2xl mb-4 shadow-lg">
-    <h2 class="text-sm font-semibold text-slate-300 mb-3">Tank Sensors</h2>
-    <div class="grid grid-cols-2 gap-2 text-xs">
-      <div class="bg-slate-900 p-3 rounded-xl border border-slate-800 flex justify-between items-center">
-        <span class="text-slate-400">Settle Low</span>
+    <h2 class="text-sm font-semibold text-slate-300 mb-3">Tank Level Sensors</h2>
+    <div class="text-[11px] text-slate-400 mb-1.5 font-semibold">Settlement Tank (3-Level)</div>
+    <div class="grid grid-cols-3 gap-2 text-xs mb-3">
+      <div class="bg-slate-900 p-2.5 rounded-xl border border-slate-800 flex flex-col items-center">
+        <span class="text-slate-400 text-[10px] mb-1">Settle Low</span>
         <span id="s_low" class="px-2 py-0.5 rounded text-[10px] font-bold badge-inactive">--</span>
       </div>
-      <div class="bg-slate-900 p-3 rounded-xl border border-slate-800 flex justify-between items-center">
-        <span class="text-slate-400">Settle High</span>
+      <div class="bg-slate-900 p-2.5 rounded-xl border border-slate-800 flex flex-col items-center">
+        <span class="text-slate-400 text-[10px] mb-1">Settle Mid</span>
+        <span id="s_mid" class="px-2 py-0.5 rounded text-[10px] font-bold badge-inactive">--</span>
+      </div>
+      <div class="bg-slate-900 p-2.5 rounded-xl border border-slate-800 flex flex-col items-center">
+        <span class="text-slate-400 text-[10px] mb-1">Settle High</span>
         <span id="s_high" class="px-2 py-0.5 rounded text-[10px] font-bold badge-inactive">--</span>
       </div>
+    </div>
+
+    <div class="text-[11px] text-slate-400 mb-1.5 font-semibold">Main Tank (2-Level)</div>
+    <div class="grid grid-cols-2 gap-2 text-xs">
       <div class="bg-slate-900 p-3 rounded-xl border border-slate-800 flex justify-between items-center">
         <span class="text-slate-400">Main Mid</span>
         <span id="m_mid" class="px-2 py-0.5 rounded text-[10px] font-bold badge-inactive">--</span>
@@ -164,16 +191,6 @@
         <span class="text-slate-400">Main High</span>
         <span id="m_high" class="px-2 py-0.5 rounded text-[10px] font-bold badge-inactive">--</span>
       </div>
-    </div>
-  </div>
-
-  <!-- Settling Timer Card -->
-  <div class="card p-5 rounded-2xl mb-4 shadow-lg">
-    <h2 class="text-sm font-semibold text-slate-300 mb-2">Settling Delay Configuration</h2>
-    <p id="countdown_text" class="text-xs text-sky-400 font-mono mb-3">Lockout Countdown: 0m remaining</p>
-    <div class="flex gap-2">
-      <input type="number" id="delay_mins_input" placeholder="Mins (e.g. 360)" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500">
-      <button onclick="setDelay()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold">Update</button>
     </div>
   </div>
 
@@ -232,8 +249,9 @@
     }
 
     let espIp = localStorage.getItem('esp_ip') || '';
-    let p1State = false;
-    let p2State = false;
+    let wellPumpState = false;
+    let filterPumpState = false;
+    let backwashEnabledState = true;
 
     // Support passing ?ip=192.168.x.x in the URL
     window.addEventListener('DOMContentLoaded', () => {
@@ -259,15 +277,26 @@
       return `${m}m ${s}s`;
     }
 
-    // Calculates how long ago the refill finished if RTC timestamp is present
+    // Formats ISO-8601 string with timezone (e.g. 2026-10-31T20:10:00+05:30) cleanly
+    function formatDisplayTime(isoStr) {
+      if (!isoStr || isoStr === "Never" || isoStr.startsWith("Uptime")) return isoStr || "Never";
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return isoStr;
+      return d.toLocaleString('en-IN', {
+        year: 'numeric', month: 'short', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+      });
+    }
+
     function formatTimeAgo(timestampStr) {
       if (!timestampStr || timestampStr === "Never" || timestampStr.startsWith("Uptime")) {
         return "";
       }
-      const parsed = new Date(timestampStr.replace(" ", "T"));
+      // ISO-8601 strings with +05:30 parse directly and accurately in all browsers
+      const parsed = new Date(timestampStr);
       if (isNaN(parsed.getTime())) return "";
       const diffSecs = Math.floor((Date.now() - parsed.getTime()) / 1000);
-      if (diffSecs < 0) return "Just now";
+      if (diffSecs < 5) return "Just now";
       if (diffSecs < 60) return `${diffSecs}s ago`;
       const mins = Math.floor(diffSecs / 60);
       if (mins < 60) return `${mins}m ago`;
@@ -299,7 +328,6 @@
     function syncClock() {
       if (!espIp) return alert('Please set ESP32 IP first.');
       let epoch = Math.floor(Date.now() / 1000);
-      // Adjust for local timezone offset in seconds so DS3231 stores local wall-clock time
       let tzOffsetSecs = -(new Date().getTimezoneOffset() * 60);
       let localEpoch = epoch + tzOffsetSecs;
       fetch(`http://${espIp}/api/sync_time?epoch=${localEpoch}`, {method: 'POST'})
@@ -308,7 +336,7 @@
           alert('RTC Clock synced: ' + (d.time || 'OK'));
           fetchStatus();
         })
-        .catch(() => alert('Failed to sync clock (ensure /api/sync_time route is in ESP32 sketch).'));
+        .catch(() => alert('Failed to sync clock.'));
     }
 
     function fetchStatus() {
@@ -326,14 +354,22 @@
           document.getElementById('sys_mode').innerText = data.manual_mode ? "MANUAL OVERRIDE" : "AUTOMATIC";
           document.getElementById('wifi_rssi').innerText = data.rssi + " dBm";
 
-          // Last Refill Telemetry (Both Tanks)
+          // Backwash Power Safeguard Badge
+          backwashEnabledState = data.backwash_enabled;
+          let bwBadge = document.getElementById('bw_status_badge');
+          if (bwBadge) {
+            bwBadge.innerText = backwashEnabledState ? "ENABLED (OK)" : "CUT OFF (LOW WATER)";
+            bwBadge.className = "px-2 py-0.5 rounded text-[10px] font-bold " + (backwashEnabledState ? "badge-active" : "badge-warn");
+          }
+
+          // Last Refill Telemetry
           let sTime = data.last_settle_refill_time || "Never";
           let mTime = data.last_main_refill_time || "Never";
-          document.getElementById('last_settle_time').innerText = sTime;
+          document.getElementById('last_settle_time').innerText = formatDisplayTime(sTime);
           document.getElementById('last_settle_dur').innerText  = formatDuration(data.last_settle_duration_secs);
           document.getElementById('last_settle_ago').innerText  = formatTimeAgo(sTime);
 
-          document.getElementById('last_main_time').innerText   = mTime;
+          document.getElementById('last_main_time').innerText   = formatDisplayTime(mTime);
           document.getElementById('last_main_dur').innerText    = formatDuration(data.last_main_duration_secs);
           document.getElementById('last_main_ago').innerText    = formatTimeAgo(mTime);
 
@@ -346,33 +382,49 @@
             faultBanner.classList.add('hidden');
           }
 
-          // Pumps
-          p1State = data.pump1;
-          p2State = data.pump2;
+          // Well Pump & Filter Pump Buttons
+          wellPumpState = data.well_pump;
+          filterPumpState = data.filter_pump;
           
-          let btn1 = document.getElementById('btn_p1');
-          let txt1 = document.getElementById('p1_txt');
-          btn1.className = "p-3 rounded-xl font-bold text-xs border " + (p1State ? "bg-emerald-600/30 border-emerald-500 text-emerald-300" : "bg-slate-800 border-slate-700 text-slate-300");
-          txt1.innerText = p1State ? "RUNNING" : "OFF";
+          let btnWell = document.getElementById('btn_well');
+          let txtWell = document.getElementById('well_txt');
+          if (btnWell && txtWell) {
+            btnWell.className = "p-3 rounded-xl font-bold text-xs border " + (wellPumpState ? "bg-emerald-600/30 border-emerald-500 text-emerald-300" : "bg-slate-800 border-slate-700 text-slate-300");
+            txtWell.innerText = wellPumpState ? "RUNNING" : "OFF";
+          }
 
-          let btn2 = document.getElementById('btn_p2');
-          let txt2 = document.getElementById('p2_txt');
-          btn2.className = "p-3 rounded-xl font-bold text-xs border " + (p2State ? "bg-emerald-600/30 border-emerald-500 text-emerald-300" : "bg-slate-800 border-slate-700 text-slate-300");
-          txt2.innerText = p2State ? "RUNNING" : "OFF";
+          let btnFilter = document.getElementById('btn_filter');
+          let txtFilter = document.getElementById('filter_txt');
+          if (btnFilter && txtFilter) {
+            btnFilter.className = "p-3 rounded-xl font-bold text-xs border " + (filterPumpState ? "bg-emerald-600/30 border-emerald-500 text-emerald-300" : "bg-slate-800 border-slate-700 text-slate-300");
+            txtFilter.innerText = filterPumpState ? "RUNNING" : "OFF";
+          }
 
-          // Sensors
+          let btnBw = document.getElementById('btn_bw');
+          let txtBw = document.getElementById('bw_btn_txt');
+          if (btnBw && txtBw) {
+            btnBw.className = "w-full p-2.5 mb-3 rounded-xl font-bold text-xs border flex justify-between items-center px-4 " + (backwashEnabledState ? "bg-slate-800 border-slate-700 text-slate-300" : "bg-amber-900/30 border-amber-600 text-amber-200");
+            txtBw.innerText = backwashEnabledState ? "ENABLED" : "CUT OFF";
+            txtBw.className = "text-[11px] font-mono " + (backwashEnabledState ? "text-emerald-400" : "text-amber-400");
+          }
+
+          // Sensors (3 Settlement + 2 Main)
           updateSensorBadge('s_low', data.sensors.settle_low_wet, 'WET', 'DRY');
+          updateSensorBadge('s_mid', data.sensors.settle_mid_wet, 'WET', 'DRY');
           updateSensorBadge('s_high', data.sensors.settle_high_wet, 'WET', 'DRY');
           updateSensorBadge('m_mid', data.sensors.main_mid_demand, 'DEMAND', 'SATISFIED');
           updateSensorBadge('m_high', data.sensors.main_high_full, 'FULL', 'OK');
 
           // Countdown timer
-          if (data.settling_remaining_secs > 0) {
-            let mins = Math.floor(data.settling_remaining_secs / 60);
-            let secs = data.settling_remaining_secs % 60;
-            document.getElementById('countdown_text').innerText = `Lockout Countdown: ${mins}m ${secs}s remaining`;
-          } else {
-            document.getElementById('countdown_text').innerText = `Settling Lockout: Inactive / Complete`;
+          let cdElem = document.getElementById('countdown_text');
+          if (cdElem) {
+            if (data.settling_remaining_secs > 0) {
+              let mins = Math.floor(data.settling_remaining_secs / 60);
+              let secs = data.settling_remaining_secs % 60;
+              cdElem.innerText = `Lockout Countdown: ${mins}m ${secs}s remaining`;
+            } else {
+              cdElem.innerText = `Settling Lockout: Inactive / Complete`;
+            }
           }
 
           // Events
@@ -391,14 +443,29 @@
 
     function updateSensorBadge(elemId, isWet, textWet, textDry) {
       let el = document.getElementById(elemId);
+      if (!el) return;
       el.innerText = isWet ? textWet : textDry;
       el.className = "px-2 py-0.5 rounded text-[10px] font-bold " + (isWet ? "badge-active" : "badge-inactive");
     }
 
-    function togglePump(num) {
+    function toggleWellPump() {
       if (!espIp) return alert('Please set ESP32 IP first.');
-      let targetState = (num === 1 ? !p1State : !p2State) ? 1 : 0;
-      fetch(`http://${espIp}/api/pump${num}?state=${targetState}`, {method: 'POST'})
+      let target = (!wellPumpState) ? 1 : 0;
+      fetch(`http://${espIp}/api/well_pump?state=${target}`, {method: 'POST'})
+        .then(() => setTimeout(fetchStatus, 300));
+    }
+
+    function toggleFilterPump() {
+      if (!espIp) return alert('Please set ESP32 IP first.');
+      let target = (!filterPumpState) ? 1 : 0;
+      fetch(`http://${espIp}/api/filter_pump?state=${target}`, {method: 'POST'})
+        .then(() => setTimeout(fetchStatus, 300));
+    }
+
+    function toggleBackwashPower() {
+      if (!espIp) return alert('Please set ESP32 IP first.');
+      let target = (!backwashEnabledState) ? 1 : 0;
+      fetch(`http://${espIp}/api/backwash_power?state=${target}`, {method: 'POST'})
         .then(() => setTimeout(fetchStatus, 300));
     }
 
