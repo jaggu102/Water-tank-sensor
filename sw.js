@@ -1,4 +1,4 @@
-const CACHE_NAME = 'water-controller-v2';
+const CACHE_NAME = 'water-controller-v3';
 const ASSETS = [
   './',
   './index.html',

@@ -339,14 +339,28 @@
         .catch(() => alert('Failed to sync clock.'));
     }
 
+    // Universal safe fetch with timeout across all mobile browsers
+    function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
+      if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+        return fetch(url, { ...options, signal: AbortSignal.timeout(timeoutMs) });
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      return fetch(url, { ...options, signal: controller.signal })
+        .finally(() => clearTimeout(timer));
+    }
+
     function fetchStatus() {
       if (!espIp) {
         document.getElementById('connection_status').innerText = "Configure ESP32 IP in ⚙️ settings";
         return;
       }
 
-      fetch(`http://${espIp}/api/status`, {signal: AbortSignal.timeout(3000)})
-        .then(res => res.json())
+      fetchWithTimeout(`http://${espIp}/api/status`)
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
         .then(data => {
           document.getElementById('connection_status').innerText = `Connected (${espIp})`;
           document.getElementById('sys_state').innerText = data.state;
@@ -437,7 +451,8 @@
           }
         })
         .catch(err => {
-          document.getElementById('connection_status').innerText = "Connection lost (Check VPN/IP)";
+          console.error("fetchStatus error:", err);
+          document.getElementById('connection_status').innerText = `Connection lost (${err.message || 'Check VPN/IP'})`;
         });
     }
 
